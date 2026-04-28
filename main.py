@@ -1,11 +1,15 @@
+from typing import Dict, List
 from collections import defaultdict
 
 from fastapi import Form, Query, Request
 import os
+import asyncio
 import mysql.connector
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from safety import AlkydSafetySystem, SafetyTempCheck
+from simulation import SensorSimulator
 
 templates = Jinja2Templates(directory="templates")
 
@@ -18,6 +22,13 @@ mydb = mysql.connector.connect(
     database="lab_reactor_management"
 )
 mycursor = mydb.cursor(dictionary=True)
+
+sensor_history: list[Dict] = []
+safety_history: list[SafetyTempCheck] = []
+
+safety_monitor = AlkydSafetySystem()
+
+active_simulators: Dict[int, SensorSimulator] = {}
 
 class ConnectionManager:
     def __init__(self):
@@ -90,12 +101,16 @@ async def open_process(
     mycursor.execute("SELECT * FROM experimental_data WHERE stage_id IN (SELECT id FROM stage WHERE process_id = %s)", (process_id,))
     experimental_data = mycursor.fetchall()
 
+    simulator = active_simulators.get(process_id)
+    input_data = simulator.sensor_history if simulator else []
+
     return templates.TemplateResponse("process_card.html", {
         "request": request,
         "process": process,
         "stages": stages,
         "control_data": control_data,
         "experimental_data": experimental_data,
+        "input_data": input_data,
     })
 
 @app.post("/add_stage")
@@ -119,6 +134,12 @@ async def delete_process(process_id: int = Form(...)):
     mydb.commit()
     return RedirectResponse(url="/reactor", status_code=303)
 
+@app.get("/control_data")
+async def get_control_data(process_id: int):
+    mycursor.execute("SELECT * FROM control_data WHERE stage_id IN (SELECT id FROM stage WHERE process_id = %s)", (process_id,))
+    control_data = mycursor.fetchall()
+    return control_data
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -129,3 +150,25 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         await manager.broadcast("A client disconnected.")
+
+@app.post("/start_simulation")
+async def start_sensor_simulation(request: Request):
+    body = await request.json()
+    process_id = int(body["process_id"])
+    if process_id in active_simulators:
+        active_simulators[process_id].stop()
+
+    simulator = SensorSimulator(process_id, manager)
+    active_simulators[process_id] = simulator
+    asyncio.create_task(simulator.simulate())
+    return {"message": "Sensor simulation started"}
+
+@app.post("/stop_simulation")
+async def stop_sensor_simulation(request: Request):
+    body = await request.json()
+    process_id = int(body["process_id"])
+    simulator = active_simulators.pop(process_id, None)
+    if simulator is None:
+        return {"message": "No active simulation for this process"}
+    simulator.stop()
+    return {"message": "Sensor simulation stopped"}

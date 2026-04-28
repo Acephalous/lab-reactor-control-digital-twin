@@ -58,34 +58,36 @@
     <h1>{{ process.name }} Input Data</h1>
     <table>
         <thead>
-            <tr>                    
-                {% for stage in stages %}
-                    <tr>
-                        <td>
-                            Stage: {{ stage.name }}
-                            <br>
-                            {% for expdata in experimental_data %}
-                                {% if expdata.stage_id == stage.id %}
-                                    External Temp: {{ expdata.external_temp }} °C<br>
-                                    Internal Temp: {{ expdata.internal_temp }} °C<br>
-                                    Pressure: {{ expdata.pressure }} bar<br>
-                                    Rotor Speed: {{ expdata.rotor_rpm }} rpm<br>
-                                    Time: {{ expdata.duration }} min
-                                {% endif %}
-                            {% endfor %}
-                            </td>         
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </th>
+            <tr>
+                <th>#</th>
+                <th>External Temp</th>
+                <th>Internal Temp</th>
+                <th>Pressure</th>
+                <th>RPM</th>
+                <th>Duration (s)</th>
             </tr>
         </thead>
+        <tbody id="input-data-body">
+            {% for data in input_data %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ data.external_temp | round(2) }} °C</td>
+                <td>{{ data.internal_temp | round(2) }} °C</td>
+                <td>{{ data.pressure | round(2) }} bar</td>
+                <td>{{ data.rpm | round(1) }}</td>
+                <td>{{ data.duration }}</td>
+            </tr>
+            {% else %}
+            <tr id="no-data-row"><td colspan="6">No simulation data yet. Start simulation first.</td></tr>
+            {% endfor %}
+        </tbody>
     </table>
     <script>
     </script>
 </div>
 <div> 
     <button class="submodule_button" onclick="beginReactorProcess()">Begin Process</button><br>
+    <button class="submodule_button" style="background-color:#d9534f;color:white;" onclick="stopReactorProcess()">Stop Process</button><br>
     <button class="submodule_button" onclick="window.location.href='/reactor'">Go to Reactor Control</button>
 </div>
 <div id="addStageModal" style="display:none; position:fixed; z-index:30; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4);">
@@ -110,8 +112,47 @@ function showAddStageModal() {
 function closeAddStageModal() {
     document.getElementById('addStageModal').style.display = 'none';
 }
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+const tbody = document.getElementById('input-data-body');
+let rowCount = 0;
+
+ws.onmessage = function(event) {
+    const msg = JSON.parse(event.data);
+    if (!msg.data) return;
+    const d = msg.data;
+    rowCount++;
+    const placeholder = document.getElementById('no-data-row');
+    if (placeholder) placeholder.remove();
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>${rowCount}</td>
+        <td>${d.external_temp.toFixed(2)} °C</td>
+        <td>${d.internal_temp.toFixed(2)} °C</td>
+        <td>${d.pressure.toFixed(2)} bar</td>
+        <td>${d.rpm.toFixed(1)}</td>
+        <td>${d.duration}</td>
+    `;
+    tbody.appendChild(tr);
+};
+
 function beginReactorProcess() {
-    
+    if(confirm('Are you sure you want to begin this process?')) {
+        fetch('/start_simulation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ process_id: '{{ process.id }}' })
+        });
+    }
+}
+function stopReactorProcess() {
+    if(confirm('Are you sure you want to stop the process?')) {
+        fetch('/stop_simulation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ process_id: '{{ process.id }}' })
+        });
+    }
 }
 </script>
 </body>

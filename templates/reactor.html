@@ -57,8 +57,10 @@
         <span onclick="closeAddProcessModal()" style="position:absolute; right:10px; top:10px; cursor:pointer;">&times;</span>
         <h2>Add Process</h2>
         <form method="post" action="/add_process">
-            <input type="text" name="name" placeholder="Process name" required style="width:90%;"><br><br>
-            <input type="text" name="type" placeholder="Process type" required style="width:90%;"><br><br>
+            <input type="text" name="name" placeholder="Process name" required style="width:90%;"><br>
+            <select name="type" required>
+                <option value="alkyd">Alkyd</option>
+            </select><br>
             <button type="submit">Add Process</button>
         </form>
     </div>
