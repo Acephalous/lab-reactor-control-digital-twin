@@ -1,0 +1,75 @@
+{% include 'body.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 95%;
+            font-size: 13px;   
+        }
+        th, td {
+            padding: 4px 5px; 
+        }
+        th {
+            font-size: 13px;
+            padding: 4px 6px;
+        }
+        input[type="text"], select {
+            font-size: 10px;
+            padding: 2px 4px;
+            width:80%;
+            height: 17px;
+        }
+    </style>
+</head>
+<body>
+<div class="tableview">
+    <h1>Control Data</h1>
+    <div>Process: <button class="submodule_button" onclick="showAddProcessModal()">New Process</button></div>
+    <table>
+        <thead>
+            <tr>                    
+                {% for process in process %}
+                    <tr>
+                        <th>
+                            <form method="get" action="/open_process" style="display:inline;">
+                                <input type="hidden" name="process_id" value="{{ process.id }}">
+                                <button class="submodule_button" type="submit">Open Process: "{{ process.name }}"</button>
+                            </form>     
+                            <button class="submodule_button" style="background-color:#d9534f;color:white;" onclick="if(confirm('Are you sure you want to delete this process? This action cannot be undone.')) { document.getElementById('deleteProcessForm{{ process.id }}').submit(); }">Delete Process</button>
+                            <form id="deleteProcessForm{{ process.id }}" method="post" action="/delete_process" style="display:none;">
+                                <input type="hidden" name="process_id" value="{{ process.id }}">
+                            </form>                      
+                        </th>
+                    </tr>
+                    {% endfor %}
+                </th>
+            </tr>
+        </thead>
+    </table>
+    <script>
+    </script>
+</div>
+<div id="addProcessModal" style="display:none; position:fixed; z-index:30; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4);">
+    <div style="background:#fff; margin:5% auto; padding:20px; border-radius:8px; width:400px; position:relative;">
+        <span onclick="closeAddProcessModal()" style="position:absolute; right:10px; top:10px; cursor:pointer;">&times;</span>
+        <h2>Add Process</h2>
+        <form method="post" action="/add_process">
+            <input type="text" name="name" placeholder="Process name" required style="width:90%;"><br><br>
+            <input type="text" name="type" placeholder="Process type" required style="width:90%;"><br><br>
+            <button type="submit">Add Process</button>
+        </form>
+    </div>
+</div>
+<script> 
+function showAddProcessModal() {
+    document.getElementById('addProcessModal').style.display = 'block';
+}
+function closeAddProcessModal() {
+    document.getElementById('addProcessModal').style.display = 'none';
+}
+</script>
+</body>
+</html>

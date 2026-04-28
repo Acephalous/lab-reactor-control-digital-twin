@@ -1,0 +1,118 @@
+{% include 'body.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 95%;
+            font-size: 13px;   
+        }
+        th, td {
+            padding: 4px 5px; 
+        }
+        th {
+            font-size: 13px;
+            padding: 4px 6px;
+        }
+        input[type="text"], select {
+            font-size: 10px;
+            padding: 2px 4px;
+            width:80%;
+            height: 17px;
+        }
+    </style>
+</head>
+<body>
+<div class="tableview" style="width: 20%;">
+    <h1>{{ process.name }} Control Data</h1>
+    <div>Stage: <button class="submodule_button" onclick="showAddStageModal()">New Stage</button></div>
+    <table>
+        <thead>
+            <tr>                    
+                {% for stage in stages %}
+                    <tr>
+                        <td>
+                            Stage: {{ stage.name }}
+                            <br>
+                            {% for data in control_data %}
+                                {% if data.stage_id == stage.id %}
+                                    External Temp: {{ data.external_temp }} °C<br>
+                                    Internal Temp: {{ data.internal_temp }} °C<br>
+                                    Duration: {{ data.duration }} min
+                                {% endif %}
+                            {% endfor %}
+                            </td>         
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </th>
+            </tr>
+        </thead>
+    </table>
+    <script>
+    </script>
+</div>
+<div class="tableview" style="width: 20%;">
+    <h1>{{ process.name }} Input Data</h1>
+    <table>
+        <thead>
+            <tr>                    
+                {% for stage in stages %}
+                    <tr>
+                        <td>
+                            Stage: {{ stage.name }}
+                            <br>
+                            {% for expdata in experimental_data %}
+                                {% if expdata.stage_id == stage.id %}
+                                    External Temp: {{ expdata.external_temp }} °C<br>
+                                    Internal Temp: {{ expdata.internal_temp }} °C<br>
+                                    Pressure: {{ expdata.pressure }} bar<br>
+                                    Rotor Speed: {{ expdata.rotor_rpm }} rpm<br>
+                                    Time: {{ expdata.duration }} min
+                                {% endif %}
+                            {% endfor %}
+                            </td>         
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </th>
+            </tr>
+        </thead>
+    </table>
+    <script>
+    </script>
+</div>
+<div> 
+    <button class="submodule_button" onclick="beginReactorProcess()">Begin Process</button><br>
+    <button class="submodule_button" onclick="window.location.href='/reactor'">Go to Reactor Control</button>
+</div>
+<div id="addStageModal" style="display:none; position:fixed; z-index:30; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4);">
+    <div style="background:#fff; margin:5% auto; padding:20px; border-radius:8px; width:400px; position:relative;">
+        <span onclick="closeAddStageModal()" style="position:absolute; right:10px; top:10px; cursor:pointer;">&times;</span>
+        <h2>Add Stage</h2>
+
+        <form method="post" action="/add_stage">
+            <input type="text" name="name" placeholder="Stage name" required style="width:90%;"><br><br>
+            <input type="hidden" name="process_id" value="{{ process.id }}">
+            <input type="text" name="external_temp" placeholder="Desired External Temperature" required style="width:90%;"><br><br>
+            <input type="text" name="internal_temp" placeholder="Desired Internal Temperature" required style="width:90%;"><br><br>
+            <input type="text" name="duration" placeholder="Duration (minutes)" required style="width:90%;"><br><br>
+            <button type="submit">Add Stage</button>
+        </form>
+    </div>
+</div>
+<script> 
+function showAddStageModal() {
+    document.getElementById('addStageModal').style.display = 'block';
+}
+function closeAddStageModal() {
+    document.getElementById('addStageModal').style.display = 'none';
+}
+function beginReactorProcess() {
+    
+}
+</script>
+</body>
+</html>
