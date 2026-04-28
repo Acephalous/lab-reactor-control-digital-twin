@@ -158,9 +158,22 @@ async def start_sensor_simulation(request: Request):
     if process_id in active_simulators:
         active_simulators[process_id].stop()
 
-    simulator = SensorSimulator(process_id, manager)
+    cur = mydb.cursor(dictionary=True)
+    cur.execute(
+        "SELECT cd.* FROM control_data cd JOIN stage s ON cd.stage_id = s.id WHERE s.process_id = %s ORDER BY cd.id",
+        (process_id,)
+    )
+    control_data = cur.fetchall()
+    cur.close()
+
+    simulator = SensorSimulator(process_id, manager, control_data)
     active_simulators[process_id] = simulator
-    asyncio.create_task(simulator.simulate())
+
+    async def run_and_cleanup():
+        await simulator.simulate()
+        active_simulators.pop(process_id, None)
+
+    asyncio.create_task(run_and_cleanup())
     return {"message": "Sensor simulation started"}
 
 @app.post("/stop_simulation")

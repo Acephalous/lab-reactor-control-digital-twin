@@ -22,10 +22,31 @@
             width:80%;
             height: 17px;
         }
+        .safety-SAFE { color: green; }
+        .safety-INFO { color: steelblue; }
+        .safety-WARNING { color: orange; font-weight: bold; }
+        .safety-CRITICAL { color: red; font-weight: bold; }
+        .stage-header td {
+            font-weight: bold;
+            font-size: 12px;
+            padding: 3px 5px;
+            color: white;
+            letter-spacing: 0.5px;
+        }
+        tr[data-stage="0"] { border-left: 3px solid #4e79a7; }
+        tr[data-stage="1"] { border-left: 3px solid #f28e2b; }
+        tr[data-stage="2"] { border-left: 3px solid #59a14f; }
+        tr[data-stage="3"] { border-left: 3px solid #e15759; }
+        tr[data-stage="4"] { border-left: 3px solid #b07aa1; }
+        .stage-header[data-stage="0"] td { background: #4e79a7; }
+        .stage-header[data-stage="1"] td { background: #f28e2b; }
+        .stage-header[data-stage="2"] td { background: #59a14f; }
+        .stage-header[data-stage="3"] td { background: #e15759; }
+        .stage-header[data-stage="4"] td { background: #b07aa1; }
     </style>
 </head>
 <body>
-<div class="tableview" style="width: 20%;">
+<div class="tableview" style="width: 20%; margin-left: 2%; margin-top: 2%;">
     <h1>{{ process.name }} Control Data</h1>
     <div>Stage: <button class="submodule_button" onclick="showAddStageModal()">New Stage</button></div>
     <table>
@@ -54,7 +75,7 @@
     <script>
     </script>
 </div>
-<div class="tableview" style="width: 20%;">
+<div class="tableview" style="width: 60%; margin-left: 2%; margin-top: 2%;">
     <h1>{{ process.name }} Input Data</h1>
     <table>
         <thead>
@@ -63,29 +84,21 @@
                 <th>External Temp</th>
                 <th>Internal Temp</th>
                 <th>Pressure</th>
+                <th>Acid Value</th>
                 <th>RPM</th>
                 <th>Duration (s)</th>
+                <th>Safety Level</th>
+                <th>ΔT (°C)</th>
+                <th>Message</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody id="input-data-body">
-            {% for data in input_data %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ data.external_temp | round(2) }} °C</td>
-                <td>{{ data.internal_temp | round(2) }} °C</td>
-                <td>{{ data.pressure | round(2) }} bar</td>
-                <td>{{ data.rpm | round(1) }}</td>
-                <td>{{ data.duration }}</td>
-            </tr>
-            {% else %}
-            <tr id="no-data-row"><td colspan="6">No simulation data yet. Start simulation first.</td></tr>
-            {% endfor %}
+            <tr id="no-data-row"><td colspan="11">No simulation data yet. Start simulation first.</td></tr>
         </tbody>
     </table>
-    <script>
-    </script>
 </div>
-<div> 
+<div style="margin-top: 3%; margin-left: 2%;"> 
     <button class="submodule_button" onclick="beginReactorProcess()">Begin Process</button><br>
     <button class="submodule_button" style="background-color:#d9534f;color:white;" onclick="stopReactorProcess()">Stop Process</button><br>
     <button class="submodule_button" onclick="window.location.href='/reactor'">Go to Reactor Control</button>
@@ -116,22 +129,51 @@ function closeAddStageModal() {
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const tbody = document.getElementById('input-data-body');
 let rowCount = 0;
+let lastStage = null;
 
 ws.onmessage = function(event) {
     const msg = JSON.parse(event.data);
+
+    if (msg.type === 'simulation_complete') {
+        const notice = document.createElement('tr');
+        notice.innerHTML = `<td colspan="11" style="text-align:center; color:green; font-weight:bold;">Process completed — all stages finished.</td>`;
+        tbody.appendChild(notice);
+        document.querySelector('[onclick="beginReactorProcess()"]').disabled = true;
+        document.querySelector('[onclick="stopReactorProcess()"]').disabled = true;
+        return;
+    }
+
     if (!msg.data) return;
     const d = msg.data;
     rowCount++;
     const placeholder = document.getElementById('no-data-row');
     if (placeholder) placeholder.remove();
+
+    const stage = d.stage ?? 0;
+    if (stage !== lastStage) {
+        lastStage = stage;
+        const header = document.createElement('tr');
+        header.classList.add('stage-header');
+        header.dataset.stage = stage;
+        header.innerHTML = `<td colspan="11">Stage ${stage + 1}</td>`;
+        tbody.appendChild(header);
+    }
+
+    const s = msg.safety;
     const tr = document.createElement('tr');
+    tr.dataset.stage = stage;
     tr.innerHTML = `
         <td>${rowCount}</td>
         <td>${d.external_temp.toFixed(2)} °C</td>
         <td>${d.internal_temp.toFixed(2)} °C</td>
         <td>${d.pressure.toFixed(2)} bar</td>
+        <td>${d.av.toFixed(2)}</td>
         <td>${d.rpm.toFixed(1)}</td>
         <td>${d.duration}</td>
+        <td class="safety-${s ? s.level : ''}">${s ? s.level : '—'}</td>
+        <td>${s ? s.delta_T.toFixed(2) : '—'}</td>
+        <td>${s ? s.message : '—'}</td>
+        <td>${s ? s.action : '—'}</td>
     `;
     tbody.appendChild(tr);
 };
