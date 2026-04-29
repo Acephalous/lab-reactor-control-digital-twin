@@ -1,5 +1,7 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from collections import defaultdict
+import subprocess
+import sys
 
 from fastapi import Form, Query, Request
 import os
@@ -9,7 +11,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from safety import AlkydSafetySystem, SafetyTempCheck
-from simulation import SensorSimulator
+from simulation import MQTTSimulator
 
 templates = Jinja2Templates(directory="templates")
 
@@ -28,7 +30,8 @@ safety_history: list[SafetyTempCheck] = []
 
 safety_monitor = AlkydSafetySystem()
 
-active_simulators: Dict[int, SensorSimulator] = {}
+active_simulators: Dict[int, MQTTSimulator] = {}
+active_publishers: Dict[int, subprocess.Popen] = {}
 
 class ConnectionManager:
     def __init__(self):
@@ -127,10 +130,10 @@ async def add_stage(name: str = Form("..."), process_id: int = Form(...), extern
 
 @app.post("/delete_process")
 async def delete_process(process_id: int = Form(...)):
-    mycursor.execute("DELETE FROM process WHERE id = %s", (process_id,))
-    mycursor.execute("DELETE FROM stage WHERE process_id = %s", (process_id,))
-    mycursor.execute("DELETE FROM control_data WHERE stage_id IN (SELECT id FROM stage WHERE process_id = %s)", (process_id,))
     mycursor.execute("DELETE FROM experimental_data WHERE stage_id IN (SELECT id FROM stage WHERE process_id = %s)", (process_id,))
+    mycursor.execute("DELETE FROM control_data WHERE stage_id IN (SELECT id FROM stage WHERE process_id = %s)", (process_id,))
+    mycursor.execute("DELETE FROM stage WHERE process_id = %s", (process_id,))
+    mycursor.execute("DELETE FROM process WHERE id = %s", (process_id,))
     mydb.commit()
     return RedirectResponse(url="/reactor", status_code=303)
 
@@ -158,6 +161,10 @@ async def start_sensor_simulation(request: Request):
     if process_id in active_simulators:
         active_simulators[process_id].stop()
 
+    if process_id in active_publishers:
+        active_publishers[process_id].terminate()
+        active_publishers.pop(process_id, None)
+
     cur = mydb.cursor(dictionary=True)
     cur.execute(
         "SELECT cd.* FROM control_data cd JOIN stage s ON cd.stage_id = s.id WHERE s.process_id = %s ORDER BY cd.id",
@@ -166,12 +173,23 @@ async def start_sensor_simulation(request: Request):
     control_data = cur.fetchall()
     cur.close()
 
-    simulator = SensorSimulator(process_id, manager, control_data)
+    publisher_path = os.path.join(os.path.dirname(__file__), "publisher.py")
+    proc = subprocess.Popen(
+        [sys.executable, publisher_path, str(process_id)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    active_publishers[process_id] = proc
+
+    simulator = MQTTSimulator(process_id, manager, control_data, broker="localhost")
     active_simulators[process_id] = simulator
 
     async def run_and_cleanup():
         await simulator.simulate()
-        active_simulators.pop(process_id, None)
+
+        pub = active_publishers.pop(process_id, None)
+        if pub:
+            pub.terminate()
 
     asyncio.create_task(run_and_cleanup())
     return {"message": "Sensor simulation started"}
@@ -184,4 +202,47 @@ async def stop_sensor_simulation(request: Request):
     if simulator is None:
         return {"message": "No active simulation for this process"}
     simulator.stop()
+    pub = active_publishers.pop(process_id, None)
+    if pub:
+        pub.terminate()
     return {"message": "Sensor simulation stopped"}
+
+
+@app.post("/save_process_history")
+async def save_process_history(request: Request):
+    body = await request.json()
+    process_id = int(body["process_id"])
+    simulator = active_simulators.get(process_id)
+    if simulator is None or not simulator.sensor_history:
+        return {"message": "No simulation data to save"}
+
+    cur = mydb.cursor(dictionary=True)
+    for reading in simulator.sensor_history:
+        stage_index = reading.get("stage", 0)
+        stage_id = None
+        if simulator.control_data and stage_index < len(simulator.control_data):
+            stage_id = simulator.control_data[stage_index].get("stage_id")
+        cur.execute(
+            "INSERT INTO experimental_data (stage_id, external_temp, internal_temp, pressure, av, timestamp, delta_T) "
+            "VALUES (%s, %s, %s, %s, %s, NOW(), %s)",
+            (stage_id, reading["external_temp"], reading["internal_temp"], reading["pressure"], reading["av"], reading["delta_T"])
+        )
+    mydb.commit()
+    cur.close()
+    return {"message": f"Saved {len(simulator.sensor_history)} readings to history"}
+
+
+def get_process_id_by_stage(stage_id: int) -> Optional[int]:
+    mycursor.execute("SELECT process_id FROM stage WHERE id = %s", (stage_id,))
+    result = mycursor.fetchone()
+    if result is None:
+        return None
+    pid = result["process_id"] if isinstance(result, dict) else result[0]
+    return int(pid)  # type: ignore[arg-type]
+
+@app.post("/add_experimental_data")
+async def add_experimental_data(stage_id: int = Form(...), temperature: float = Form(...), pressure: float = Form(...), av: float = Form(...), delta_T: float = Form(...), timestamp: str = Form(...)):
+    sql = "INSERT INTO experimental_data (stage_id, temperature, pressure, av, delta_T, timestamp) VALUES (%s, %s, %s, %s, %s, %s)"
+    mycursor.execute(sql, (stage_id, temperature, pressure, av, delta_T, timestamp))
+    mydb.commit()
+    return RedirectResponse(url=f"/open_process?process_id={get_process_id_by_stage(stage_id)}", status_code=303)

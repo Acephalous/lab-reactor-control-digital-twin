@@ -3,6 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         table {
             border-collapse: collapse;
@@ -95,8 +96,58 @@
         </thead>
         <tbody id="input-data-body">
             <tr id="no-data-row"><td colspan="11">No simulation data yet. Start simulation first.</td></tr>
+            <button class="submodule_button" style="margin: 10px;" onclick="saveProcessToHistory()">Save Process to History</button>
         </tbody>
     </table>
+</div>
+<div class="tableview" style="width: 35%; margin-left: 2%; margin-top: 2%;">
+    <h1>Process History</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+                <th>External Temp (°C)</th>
+                <th>Internal Temp (°C)</th>
+                <th>Delta T (°C)</th>
+                <th>Pressure (bar)</th>
+                <th>AV</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set ns = namespace(last_stage_id=None, stage_idx=-1) %}
+            {% for history in experimental_data %}
+            {% if history.stage_id != ns.last_stage_id %}
+                {% set ns.last_stage_id = history.stage_id %}
+                {% set ns.stage_idx = ns.stage_idx + 1 %}
+                <tr class="stage-header" data-stage="{{ ns.stage_idx % 5 }}">
+                    <td colspan="7">
+                        Stage: {% for stage in stages %}{% if stage.id == history.stage_id %}{{ stage.name }}{% endif %}{% endfor %}
+                    </td>
+                </tr>
+            {% endif %}
+            <tr data-stage="{{ ns.stage_idx % 5 }}">
+                <td>{{ loop.index }}</td>
+                <td>{{ history.timestamp }}</td>
+                <td>{{ history.external_temp }}</td>
+                <td>{{ history.internal_temp }}</td>
+                <td>{{ history.delta_T }}</td>
+                <td>{{ history.pressure }}</td>
+                <td>{{ history.av }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div style="display:flex; gap:2%; margin-left:2%; margin-top:2%; width:96%;">
+    <div style="flex:1; background:#fff; padding:10px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+        <h2 style="font-size:14px; margin-bottom:6px;">Temperature over Time</h2>
+        <canvas id="tempChart"></canvas>
+    </div>
+    <div style="flex:1; background:#fff; padding:10px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,.1);">
+        <h2 style="font-size:14px; margin-bottom:6px;">Acid Value (AV) over Time</h2>
+        <canvas id="avChart"></canvas>
+    </div>
 </div>
 <div style="margin-top: 3%; margin-left: 2%;"> 
     <button class="submodule_button" onclick="beginReactorProcess()">Begin Process</button><br>
@@ -118,6 +169,14 @@
         </form>
     </div>
 </div>
+<script type="application/json" id="hist-data">
+{
+    "labels":   {{ experimental_data | map(attribute='id')            | list | tojson }},
+    "extTemp":  {{ experimental_data | map(attribute='external_temp') | list | tojson }},
+    "intTemp":  {{ experimental_data | map(attribute='internal_temp') | list | tojson }},
+    "av":       {{ experimental_data | map(attribute='av')            | list | tojson }}
+}
+</script>
 <script> 
 function showAddStageModal() {
     document.getElementById('addStageModal').style.display = 'block';
@@ -125,6 +184,48 @@ function showAddStageModal() {
 function closeAddStageModal() {
     document.getElementById('addStageModal').style.display = 'none';
 }
+function saveProcessToHistory() {
+    if(confirm('Are you sure you want to save this process to history?')) {
+        fetch('/save_process_history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ process_id: '{{ process.id }}' })
+        }).then(response => response.json())
+          .then(data => alert(data.message))
+          .catch(error => alert('Error saving process history: ' + error));
+    }
+}
+
+const histData    = JSON.parse(document.getElementById('hist-data').textContent);
+const histLabels  = histData.labels;
+const histExtTemp = histData.extTemp;
+const histIntTemp = histData.intTemp;
+const histAV      = histData.av;
+
+const tempChart = new Chart(document.getElementById('tempChart'), {
+    type: 'line',
+    data: {
+        labels: [...histLabels],
+        datasets: [
+            { label: 'External Temp (°C)', data: [...histExtTemp], borderColor: '#4e79a7', backgroundColor: 'rgba(78,121,167,.1)', pointRadius: 2, tension: 0.3 },
+            { label: 'Internal Temp (°C)', data: [...histIntTemp], borderColor: '#e15759', backgroundColor: 'rgba(225,87,89,.1)',  pointRadius: 2, tension: 0.3 }
+        ]
+    },
+    options: { animation: false, scales: { x: { ticks: { maxTicksLimit: 12 } } } }
+});
+
+const avChart = new Chart(document.getElementById('avChart'), {
+    type: 'line',
+    data: {
+        labels: [...histLabels],
+        datasets: [
+            { label: 'Acid Value', data: [...histAV], borderColor: '#59a14f', backgroundColor: 'rgba(89,161,79,.1)', pointRadius: 2, tension: 0.3 }
+        ]
+    },
+    options: { animation: false, scales: { x: { ticks: { maxTicksLimit: 12 } } } }
+});
+
+let liveCount = histLabels.length;
 
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const tbody = document.getElementById('input-data-body');
@@ -176,6 +277,16 @@ ws.onmessage = function(event) {
         <td>${s ? s.action : '—'}</td>
     `;
     tbody.appendChild(tr);
+
+    liveCount++;
+    const lbl = String(liveCount);
+    tempChart.data.labels.push(lbl);
+    tempChart.data.datasets[0].data.push(parseFloat(d.external_temp.toFixed(2)));
+    tempChart.data.datasets[1].data.push(parseFloat(d.internal_temp.toFixed(2)));
+    tempChart.update();
+    avChart.data.labels.push(lbl);
+    avChart.data.datasets[0].data.push(parseFloat(d.av.toFixed(2)));
+    avChart.update();
 };
 
 function beginReactorProcess() {
