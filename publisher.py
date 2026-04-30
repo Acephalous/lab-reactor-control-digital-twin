@@ -35,6 +35,7 @@ def current_av(elapsed: float) -> float:
     return AV_START + (AV_END - AV_START) * (1 - math.exp(-4 * t)) / (1 - math.exp(-4))
 
 client = mqtt.Client(CallbackAPIVersion.VERSION2)
+client.loop_start()
 client.connect(BROKER, 1883)
 
 print(f"Publisher started — process {PROCESS_ID}, {len(STAGES)} stages")

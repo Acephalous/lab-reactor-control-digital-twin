@@ -222,10 +222,11 @@ async def save_process_history(request: Request):
         stage_id = None
         if simulator.control_data and stage_index < len(simulator.control_data):
             stage_id = simulator.control_data[stage_index].get("stage_id")
+        delta_t = reading["internal_temp"] - reading["external_temp"]
         cur.execute(
             "INSERT INTO experimental_data (stage_id, external_temp, internal_temp, pressure, av, timestamp, delta_T) "
             "VALUES (%s, %s, %s, %s, %s, NOW(), %s)",
-            (stage_id, reading["external_temp"], reading["internal_temp"], reading["pressure"], reading["av"], reading["delta_T"])
+            (stage_id, reading["external_temp"], reading["internal_temp"], reading["pressure"], reading["av"], delta_t)
         )
     mydb.commit()
     cur.close()
